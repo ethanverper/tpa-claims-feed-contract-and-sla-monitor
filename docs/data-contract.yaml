@@ -1,0 +1,283 @@
+# =============================================================================
+# docs/data-contract.yaml: the TPA daily claim transactions contract (DRAFT)
+# =============================================================================
+# What this file is: the written, versioned, testable promise about the daily
+# claim-transactions file that each TPA sends to Northbridge Logistics.
+# From level 2 on, the validator READS this file at run time, so the document
+# and the checker cannot drift apart (tenet 1 in docs/tpm/charter.md).
+#
+# Style: Open Data Contract Standard (ODCS) v3, Bitol project (Linux Foundation).
+# Key names follow ODCS v3 as understood on 2026-11-06. Before publishing, check
+# them against the current ODCS specification (RAID assumption A2). Items ODCS
+# does not model directly live under customProperties.
+#
+# Portfolio note: Northbridge Logistics and the three TPAs are fictional; all
+# data is synthetic. One contract covers the three TPAs: the layout is the same,
+# only the delimiter differs (customProperties.tpaFeeds).
+# =============================================================================
+
+# --- Identity ----------------------------------------------------------------
+apiVersion: v3.0.2            # ODCS version the file follows (verify, see header)
+kind: DataContract
+id: northbridge-tpa-claim-transactions
+name: TPA daily claim transactions
+version: 1.0.0                # semver: MAJOR = breaking, MINOR = new optional column, PATCH = docs
+status: draft                 # moves to active per TPA at its go/no-go gate (docs/tpm/go-no-go.md)
+domain: claims
+dataProduct: tpa-claims-feed
+tenant: tpa-claims-feed-contract-and-sla-monitor
+
+# --- Purpose -----------------------------------------------------------------
+description:
+  purpose: >
+    Daily extract of every claim transaction (payment, reserve change, recovery,
+    status change) a TPA recorded on the business date. Feeds reserving, the
+    month-end claims accrual, safety analytics and the TPA scorecard
+    (KPIs in docs/spec.md, section 2).
+  limitations: >
+    Not the legal claim record. Corrections arrive as new transactions, never as
+    edits of earlier rows. Carries no claimant personal data (no names,
+    addresses, phone numbers or medical details); adding any needs a MAJOR
+    version and a security review.
+  usage: Reserving, accruals, safety analytics, TPA scorecard. Anything else needs a contract change.
+
+# --- Ownership (roles map to docs/tpm/raci.md) -------------------------------
+team:
+  - username: tpa-ops
+    role: Producer owner        # each TPA's operations contact: answers for its feed and resends
+  - username: claims-ops-lead
+    role: Consumer owner        # answers for how Northbridge uses the data
+  - username: program-owner
+    role: Contract steward      # the TPM: keeps this file and its change log current
+
+# --- Where the data lands ----------------------------------------------------
+servers:
+  - server: tpa-landing
+    type: s3
+    location: s3://BUCKET/landing/tpa={tpa_id}/business_date={YYYY-MM-DD}/
+    format: csv                 # TPA-B uses "|" as delimiter (customProperties.tpaFeeds)
+    delimiter: ","
+    encoding: UTF-8
+
+# --- Schema ------------------------------------------------------------------
+schema:
+  # The data file: one row per claim transaction (the GRAIN).
+  - name: claim_transactions
+    physicalName: "{tpa_id}_claims_{YYYYMMDD}.csv"
+    physicalType: file
+    description: One row per claim transaction recorded by the TPA on the business date.
+    properties:
+      - name: transaction_id
+        logicalType: string
+        required: true
+        unique: true
+        primaryKey: true
+        description: TPA's unique ID of the transaction. Never reused; the idempotency key for rows.
+      - name: tpa_claim_ref
+        logicalType: string
+        required: true
+        description: The TPA's own claim number.
+      - name: claim_id
+        logicalType: string
+        required: true
+        description: Northbridge claim ID (NBL-CLM-nnnnnn), assigned at first notice of loss (FNOL).
+      - name: loss_date
+        logicalType: date
+        required: true
+        description: Date of the incident, ISO 8601 (YYYY-MM-DD).
+      - name: report_date
+        logicalType: date
+        required: true
+        description: Date the incident was reported to the TPA. Rule - loss_date <= report_date.
+      - name: transaction_date
+        logicalType: date
+        required: true
+        description: Date the TPA recorded the transaction. Rule - report_date <= transaction_date.
+      - name: transaction_type
+        logicalType: string
+        required: true
+        description: What happened to the claim.
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [PAYMENT, RESERVE_CHANGE, RECOVERY, STATUS_CHANGE]
+            mustBe: 0
+      - name: coverage
+        logicalType: string
+        required: true
+        description: Coverage line of the claim.
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [AUTO_LIABILITY, PHYSICAL_DAMAGE, BODILY_INJURY, CARGO]
+            mustBe: 0
+      - name: claim_status
+        logicalType: string
+        required: true
+        description: Claim status after the transaction.
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [OPEN, CLOSED, REOPENED, DENIED]
+            mustBe: 0
+      - name: paid_amount
+        logicalType: number
+        physicalType: decimal(12,2)
+        required: true
+        classification: financial
+        description: >
+          Amount paid by this transaction, 0.00 when nothing was paid. Sign rule -
+          PAYMENT is positive, RECOVERY is negative (money coming back).
+          Summed into the manifest's control_total_paid.
+      - name: reserve_amount
+        logicalType: number
+        physicalType: decimal(12,2)
+        required: true
+        classification: financial
+        description: Change in the case reserve, 0.00 when unchanged.
+      - name: currency
+        logicalType: string
+        required: true
+        description: ISO 4217 alphabetic code. Unknown codes (for example "US$", "MXP") fail; they never default.
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [USD, MXN, CAD]
+            mustBe: 0
+      - name: vin
+        logicalType: string
+        required: false
+        description: >
+          17-character vehicle identification number of the Northbridge van, check digit
+          (position 9) valid. May be blank only while the TPA is still identifying the
+          vehicle: at most 2% of rows per file.
+        quality:
+          - type: library
+            metric: nullValues
+            mustBeLessThan: 2
+            unit: percent
+      - name: as_of_ts
+        logicalType: timestamp
+        required: true
+        description: >
+          When the TPA extracted the row, ISO 8601 with offset (for example
+          2026-10-12T22:15:03-05:00). Rule - transaction_date <= as_of_ts.
+
+    # File-level rules: they decide whether the whole file is accepted.
+    quality:
+      - type: library
+        metric: nullValues
+        description: Required fields blank on at most 0.5% of rows (vin has its own 2% limit).
+        mustBeLessThan: 0.5
+        unit: percent
+      - type: sql
+        description: Row count equals the manifest's row_count.
+        query: SELECT ABS(COUNT(*) - :row_count) FROM claim_transactions
+        mustBe: 0
+      - type: sql
+        description: Sum of paid_amount equals the manifest's control_total_paid, to the cent.
+        query: SELECT ABS(SUM(paid_amount) - :control_total_paid) FROM claim_transactions
+        mustBeLessThan: 0.01
+      - type: sql
+        description: No transaction_id repeated in the file or already received from this TPA.
+        query: SELECT COUNT(*) - COUNT(DISTINCT transaction_id) FROM claim_transactions
+        mustBe: 0
+
+  # The receipt that travels with each data file. Its arrival starts validation;
+  # a data file without its manifest is never processed.
+  - name: manifest
+    physicalName: _manifest.json
+    physicalType: file
+    description: One JSON object per data file.
+    properties:
+      - name: tpa_id
+        logicalType: string
+        required: true
+        description: TPA-A, TPA-B or TPA-C.
+      - name: business_date
+        logicalType: date
+        required: true
+        description: Business date the file covers.
+      - name: file_name
+        logicalType: string
+        required: true
+        description: Name of the data file this manifest describes.
+      - name: row_count
+        logicalType: integer
+        required: true
+        description: Data rows in the file (header excluded).
+      - name: control_total_paid
+        logicalType: number
+        physicalType: decimal(14,2)
+        required: true
+        description: Sum of paid_amount over all rows.
+      - name: sha256
+        logicalType: string
+        required: true
+        description: SHA-256 of the data file. The same hash for the same TPA and date means a resend, ignored.
+
+# --- Service levels (SLA) ----------------------------------------------------
+# SLI = what is measured; SLO = our stricter internal target; SLA = the promise
+# between the TPA and Northbridge. Full table: docs/spec.md and docs/tpm/runbook.md.
+slaProperties:
+  - property: frequency
+    value: 1
+    unit: d                     # one file per TPA per business day
+  - property: timeOfAvailability
+    value: "06:00"
+    unit: America/Chicago       # (custom unit) file + manifest for date D in S3 by 06:00 CT on D+1;
+                                # stored as local time + zone so daylight saving is handled (RAID R2)
+  - property: latency
+    value: 6
+    unit: h                     # midnight to 06:00: the extract is at most 6 h old at the deadline
+  - property: retention
+    value: 7
+    unit: y                     # claims records retention (illustrative); the demo deletes everything
+
+# --- Items ODCS does not model directly --------------------------------------
+customProperties:
+  - property: tpaFeeds
+    value: >
+      TPA-A Harbor Claims Services: CSV, comma, ~1,200 rows/day.
+      TPA-B Redwood Risk Administrators: pipe-delimited ("|"), ~800 rows/day.
+      TPA-C Summit Adjusters: CSV, comma, ~500 rows/day.
+  - property: ruleActions
+    value: >
+      FILE (reject the whole file to quarantine/ and alert): missing or renamed column,
+      row count or control total different from the manifest, completeness above 2x its limit.
+      FILE (ignore and log): same sha256 already accepted for the TPA and date.
+      FILE (warn in the daily digest): completeness between its limit and 2x the limit.
+      ROW (quarantine the row, keep the rest): invalid enum or currency, unparseable date,
+      bad VIN check digit, dates out of order, duplicate transaction_id, wrong sign.
+      FEED (alert): file not in S3 by 06:00 CT (warning), still missing at 08:00 CT (critical).
+  - property: slaTargets
+    value: >
+      On-time delivery >= 98% (trailing 30 days). Completeness >= 99.5%.
+      Files accepted >= 97%. Error rate <= 5 per 1,000 rows. Corrected file within
+      1 business day of a rejection. Internal SLOs: validation result within 10 minutes
+      of arrival; scorecard published by 07:00 CT.
+  - property: rolloutMode
+    value: >
+      Each TPA starts in warn-only mode (rules evaluated and reported, nothing rejected)
+      and moves to enforce after its go/no-go gate (docs/tpm/go-no-go.md). The mode per
+      TPA is set in config/settings.yaml.
+  - property: breachHandling
+    value: >
+      +0 min: automated alert to the TPA ops contact (rejection or missing file).
+      +2 h (08:00 CT for a missing file): critical alert to the program owner and the TPA account manager.
+      +1 business day: corrected file due; otherwise the account manager calls the TPA.
+      Third breach in 30 days, or two consecutive weeks of completeness breach: item on the TPA review agenda.
+      Schema change without notice: COE opened (docs/tpm/coe.md).
+  - property: changeProcess
+    value: >
+      Written notice 30 days before any layout change, with a sample file 14 days ahead.
+      MINOR = add an optional column. MAJOR = rename, remove, retype or change the meaning of a
+      column: needs consumer sign-off and a parallel run. A file whose header differs from this
+      contract is rejected, never loaded into the wrong column.
+  - property: changeLog
+    value: >
+      1.0.0 2026-11-06 initial draft (level 0), program owner. Pending: sign-off by each TPA (RAID D1).

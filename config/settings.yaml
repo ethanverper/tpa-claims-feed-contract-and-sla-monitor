@@ -1,0 +1,26 @@
+# =============================================================================
+# config/settings.yaml — every tunable value of the project, in one place.
+#
+# Who reads it:
+#   - Python (generators, scripts) through src/common/settings.py
+#   - Terraform through yamldecode(file(...)), which passes values to Lambda (env vars)
+#     and Glue (job arguments)
+#
+# What does NOT belong here: master data (config/master_data.yaml) and protocol
+# constants nobody should tune (event types, AWS API limits), which stay in code.
+# =============================================================================
+
+project:
+  name: <repo-name>
+  region: us-east-1
+
+# Business rules: alert thresholds (explained in docs/kpi-dictionary.md)
+alerts:
+  <kpi>_threshold: <value>   # <what crossing it means and who gets alerted>
+
+# Simulation / data generation
+simulation:
+  seed: 42                   # same seed -> same data -> same README numbers
+
+# AWS sizing and timings (cheap defaults; see docs/spec.md cost estimate)
+aws: {}
