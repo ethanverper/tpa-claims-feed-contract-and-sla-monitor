@@ -3,7 +3,7 @@
 > **Portfolio project.** Northbridge Logistics, its three TPAs and every row of data are fictional.
 
 ## 1. Business case
-- **Industry / function:** Insurance claims operations for a fleet. **Northbridge Logistics** runs about 3,500 leased delivery vans. It self-insures its auto liability and hires three outside **TPAs** (third-party administrators) to handle the claims:
+- **Industry / function:** Insurance claims operations for a fleet. **Northbridge Logistics** runs about 35,000 leased delivery vans. It self-insures its auto liability and hires three outside **TPAs** (third-party administrators) to handle the claims:
 
   | TPA | Code | Daily file | Volume | Data discipline |
   |---|---|---|---|---|

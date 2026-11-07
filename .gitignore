@@ -7,3 +7,4 @@ infra/terraform/*.tfstate*
 infra/terraform/terraform.tfvars
 *.zip
 .DS_Store
+data/generated/

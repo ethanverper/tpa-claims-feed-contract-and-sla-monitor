@@ -1,26 +1,73 @@
 # =============================================================================
-# config/settings.yaml — every tunable value of the project, in one place.
+# config/settings.yaml: every tunable value of the project, in one place.
 #
 # Who reads it:
-#   - Python (generators, scripts) through src/common/settings.py
-#   - Terraform through yamldecode(file(...)), which passes values to Lambda (env vars)
-#     and Glue (job arguments)
+#   - Python (simulator, checks, scripts) through src/common/settings.py
+#   - Terraform through yamldecode(file(...)) from level 4, which passes values to
+#     Lambda (environment variables) and Glue (job arguments)
 #
-# What does NOT belong here: master data (config/master_data.yaml) and protocol
-# constants nobody should tune (event types, AWS API limits), which stay in code.
+# What does NOT belong here: master data (config/master_data.yaml) and the data
+# contract itself (docs/data-contract.yaml). Explained in docs/configuration.md.
 # =============================================================================
 
 project:
-  name: <repo-name>
+  name: tpa-claims-feed-contract-and-sla-monitor
   region: us-east-1
 
-# Business rules: alert thresholds (explained in docs/kpi-dictionary.md)
-alerts:
-  <kpi>_threshold: <value>   # <what crossing it means and who gets alerted>
+# The data contract the simulator writes against and (from level 2) the checker reads
+contract:
+  path: docs/data-contract.yaml
+  data_table: claim_transactions  # schema entry with the data file's columns
+  manifest_table: manifest        # schema entry with the manifest's fields
+  manifest_file_name: _manifest.json
 
-# Simulation / data generation
+# The business calendar of the feed
+calendar:
+  first_business_date: 2026-10-01 # first business date covered by the simulation
+  business_days: 30               # how many business dates (Monday to Friday) are simulated
+  timezone: America/Chicago       # the SLA is written in Central Time (CT)
+  deadline_local_time: "06:00"    # file for date D due by this time on the next business day
+  critical_local_time: "08:00"    # still missing at this time -> critical alert
+
+# Synthetic data generation (local, no AWS)
 simulation:
-  seed: 42                   # same seed -> same data -> same README numbers
+  seed: 42                        # same seed -> same files -> same README numbers
+  output_dir: data/generated      # gitignored; the answer key never leaves the laptop
+  sample_dir: data/sample         # a few committed rows per TPA, for the README
+  sample_rows: 12
+  volume_jitter: 0.08             # daily rows vary +/- 8% around each TPA's average
+  arrival_window_local: ["01:00", "05:30"]   # normal deliveries land in this window on D+1
+  extract_window_local: ["21:30", "23:45"]   # as_of_ts: when the TPA extracted the rows on date D
+  vin_blank_rate: 0.008           # normal share of rows with a blank VIN (contract allows 2%)
+  max_report_lag_days: 10         # report_date - loss_date, in days
+  portfolio_age_days: 180         # open claims at start were reported up to this many days earlier
 
-# AWS sizing and timings (cheap defaults; see docs/spec.md cost estimate)
+# The planted defects: each one is written to the answer key so detection can be graded.
+# Days are business-day numbers (1 = first_business_date). Counts follow docs/spec.md.
+defects:
+  late_files:                     # arrive after the 06:00 CT deadline (local time on D+1)
+    - {tpa_id: TPA-A, day: 12, arrival_local: "09:40"}
+    - {tpa_id: TPA-B, day: 3, arrival_local: "07:10"}
+    - {tpa_id: TPA-C, day: 26, arrival_local: "06:50"}
+  missing_files:                  # nothing at the deadline; arrives this many hours late
+    - {tpa_id: TPA-C, day: 21, hours_late: 31}
+  schema_drift:                   # a column renamed without notice; the TPA resends a fixed file
+    - {tpa_id: TPA-B, day: 17, renamed_from: paid_amount, renamed_to: amount_paid, resend_after_hours: 26}
+    - {tpa_id: TPA-B, day: 18, renamed_from: paid_amount, renamed_to: amount_paid, resend_after_hours: 26}
+  manifest_mismatch:              # the manifest does not describe the file; a corrected pair follows
+    - {tpa_id: TPA-A, day: 9, field: row_count, offset: 12, resend_after_hours: 5}
+    - {tpa_id: TPA-B, day: 24, field: control_total_paid, offset: 1284.50, resend_after_hours: 5}
+  duplicate_resends:              # the exact same file (same SHA-256) delivered twice
+    - {tpa_id: TPA-A, day: 5, resend_after_hours: 2}
+    - {tpa_id: TPA-C, day: 15, resend_after_hours: 2}
+  completeness_drift:             # VIN blank on far more rows than the contract allows
+    - {tpa_id: TPA-C, first_day: 8, last_day: 14, vin_blank_rate: 0.18}
+  row_defects:                    # planted only in files that are otherwise accepted
+    invalid_currency: {count: 40, values: ["US$", "MXP"]}
+    bad_vin_check_digit: {count: 15}
+    loss_after_report: {count: 12}
+    duplicate_transaction_id: {count: 60, share_across_days: 0.5}  # half reuse an ID from an earlier day
+    negative_payment: {count: 25}
+
+# AWS sizing and timings (filled from level 4; cheap defaults, see docs/spec.md)
 aws: {}

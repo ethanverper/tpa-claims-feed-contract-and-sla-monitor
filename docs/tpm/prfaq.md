@@ -12,7 +12,7 @@
 
 **Chicago, IL, 2026-11-13** — Northbridge Logistics launches the TPA claims feed monitor: every morning, before 07:00, the claims team knows whether each of its three claims administrators delivered yesterday's claim transactions on time, complete and in the agreed format, and which administrator needs a conversation this week.
 
-**The problem.** Northbridge's 3,500 delivery vans generate claims that three outside administrators (TPAs) handle and report back in daily files. Today nobody checks those files when they arrive. A late file, a renamed column or a week of blank vehicle numbers is found weeks later, when finance asks why the month-end claims accrual moved. By then the bad data is already in reserving, accruals and safety reports.
+**The problem.** Northbridge's 35,000 delivery vans generate claims that three outside administrators (TPAs) handle and report back in daily files. Today nobody checks those files when they arrive. A late file, a renamed column or a week of blank vehicle numbers is found weeks later, when finance asks why the month-end claims accrual moved. By then the bad data is already in reserving, accruals and safety reports.
 
 **The solution.** What a good file looks like is now written down as a data contract that both sides agreed to. Every file is checked against it the moment it lands. Bad files are set aside with the exact rule they broke, bad rows are quarantined without blocking the good ones, and a missing file raises an alarm at 06:00 even though nothing arrived. Each TPA gets a daily scorecard.
 

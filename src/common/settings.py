@@ -50,3 +50,40 @@ def settings() -> dict[str, Any]:
 def master_data() -> dict[str, Any]:
     """Return config/master_data.yaml: the project's reference data."""
     return load_yaml("master_data.yaml")
+
+
+def data_contract() -> dict[str, Any]:
+    """Return docs/data-contract.yaml, the agreement every TPA file is written and checked against.
+
+    Why it is read here and not copied into settings.yaml:
+        The contract is the single source of truth for column names, allowed values and limits.
+        The simulator writes files from it and the checker (level 2) validates files against it,
+        so the two can never disagree about what a good file looks like.
+    """
+    # The path to the contract is itself a setting, so a second contract version could be tested
+    with (REPO_ROOT / settings()["contract"]["path"]).open(encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def contract_table(name: str) -> dict[str, Any]:
+    """Return one schema entry of the data contract (e.g. "claim_transactions" or "manifest").
+
+    Args:
+        name: The schema entry's `name` in docs/data-contract.yaml.
+
+    Returns:
+        The entry: physicalName, properties (columns) and quality rules.
+
+    Raises:
+        KeyError: If the contract has no entry with that name.
+    """
+    # Look the entry up by name, so the order of entries in the YAML does not matter
+    for table in data_contract()["schema"]:
+        if table["name"] == name:
+            return table
+    raise KeyError(f"The data contract has no schema entry named {name!r}")
+
+
+def contract_columns(name: str) -> list[str]:
+    """Return the column names of one contract entry, in the order the file must have them."""
+    return [prop["name"] for prop in contract_table(name)["properties"]]

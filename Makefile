@@ -2,7 +2,7 @@ PROJECT ?= $(shell basename $(CURDIR))
 TF := terraform -chdir=infra/terraform
 PYTHON ?= python3
 
-.PHONY: help install test lint fmt deploy demo destroy leftovers cost
+.PHONY: help install test lint fmt generate deploy demo destroy leftovers cost
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -20,6 +20,9 @@ lint: ## Python lint + Terraform format check
 fmt: ## Format Python and Terraform
 	ruff format .
 	$(TF) fmt -recursive
+
+generate: ## Simulate 3 TPAs x 30 business days of claim files, planted defects and answer key into data/generated (local, no AWS)
+	$(PYTHON) -m src.generators.tpa_feed_simulator
 
 deploy: ## Create the stack (read the cost estimate in docs/spec.md first)
 	$(TF) init -input=false

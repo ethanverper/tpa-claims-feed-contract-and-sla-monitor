@@ -1,0 +1,71 @@
+# =============================================================================
+# config/master_data.yaml: the reference data of the (fictional) business.
+#
+# What lives here: who the TPAs are, the shape of their feeds, the claim mix and
+# the fleet. Tunable rules and simulation knobs live in config/settings.yaml.
+# Who reads it: src/common/settings.py -> master_data().
+#
+# Portfolio note: Northbridge Logistics and the three TPAs are fictional.
+# =============================================================================
+
+company:
+  name: Northbridge Logistics
+  claim_id_prefix: NBL-CLM        # Northbridge's own claim number, assigned at first notice of loss
+  reporting_currency: USD
+
+# The three claims administrators and the shape of their daily feed
+tpas:
+  - tpa_id: TPA-A
+    name: Harbor Claims Services
+    delimiter: ","                # CSV
+    daily_rows: 1200              # average transactions per business day
+    claim_ref_prefix: HCS         # the TPA's own claim number prefix
+    transaction_prefix: HCS       # prefix of transaction_id
+    open_claims_at_start: 2400    # open claims in the portfolio on day 1
+    new_claims_per_day: 70        # first notices of loss per business day
+  - tpa_id: TPA-B
+    name: Redwood Risk Administrators
+    delimiter: "|"                # pipe-delimited
+    daily_rows: 800
+    claim_ref_prefix: RRA
+    transaction_prefix: RRA
+    open_claims_at_start: 1600
+    new_claims_per_day: 45
+  - tpa_id: TPA-C
+    name: Summit Adjusters
+    delimiter: ","
+    daily_rows: 500
+    claim_ref_prefix: SUM
+    transaction_prefix: SUM
+    open_claims_at_start: 1000
+    new_claims_per_day: 30
+
+# Coverage lines: share of claims and the typical size of ONE payment (USD), not of a whole claim.
+# Sized so the fleet pays ~$1.5M per business day (~$400M a year, ~$11K per van): see docs/lessons-learned.md.
+# Payments follow a log-normal curve around the median: most are small, a few are large.
+coverages:
+  - code: PHYSICAL_DAMAGE         # damage to Northbridge's own vans
+    weight: 0.45
+    payment_median: 700           # repair shop, towing and rental bills
+  - code: AUTO_LIABILITY          # damage Northbridge caused to third-party property
+    weight: 0.30
+    payment_median: 1100
+  - code: BODILY_INJURY           # injuries to third parties
+    weight: 0.15
+    payment_median: 2400          # medical bills arrive in many small payments
+  - code: CARGO                   # damaged or lost packages
+    weight: 0.10
+    payment_median: 200
+
+# What a transaction does to a claim, and how often each happens
+transaction_types:
+  PAYMENT: 0.45                   # money paid out (positive paid_amount)
+  RESERVE_CHANGE: 0.35            # the expected cost of the claim is revised
+  RECOVERY: 0.05                  # money coming back, e.g. from the other driver's insurer (negative)
+  STATUS_CHANGE: 0.15             # claim closed, reopened or denied, no money moves
+
+# The leased van fleet: VINs are generated from these, each with a valid check digit
+fleet:
+  size: 35000                     # ~145 new claims per business day = about 1 claim per van per year
+  manufacturer_codes: [1FT, 3C6, WD3]   # world manufacturer identifiers (first 3 VIN characters)
+  model_years: [2021, 2022, 2023, 2024, 2025]
