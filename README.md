@@ -1,124 +1,45 @@
-<!--
-TEMPLATE: replace every <...> and delete these comments.
-Order matters: a non-technical reader should understand sections 1–4 without reading code.
--->
+# Know by 07:00 whether every claims administrator delivered good data
 
-# <Business outcome in plain words, e.g. "Catch scrap and stock-outs on the factory floor in seconds">
+A data contract and SLA monitor for the daily claim files that three outside claims administrators (TPAs) send to a delivery fleet. Every file is checked against a written contract the moment it lands. A **missing** file raises an alarm at 06:00 even though nothing arrived. Each TPA gets a daily scorecard: on-time delivery, completeness, files accepted, error rate and dollars quarantined.
 
-<One sentence: what this pipeline measures, for whom, and how fast.>
+![CI](https://github.com/ethanverper/tpa-claims-feed-contract-and-sla-monitor/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC) ![AWS](https://img.shields.io/badge/AWS-S3%20·%20EventBridge%20·%20Lambda%20·%20DynamoDB%20·%20Glue%20Data%20Quality%20·%20Athena%20·%20SNS-FF9900)
 
-![CI](https://github.com/ethanverper/<repo>/actions/workflows/ci.yml/badge.svg)
-![Python](https://img.shields.io/badge/python-3.12-blue) ![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC) ![AWS](https://img.shields.io/badge/AWS-<services>-FF9900)
-![Cost](https://img.shields.io/badge/run%20cost-%24<0.00>-brightgreen)
+> 🚧 **In progress, built level by level.** Third project of the portfolio. This one is run as a program, not only coded: the TPM paper trail (PR/FAQ, charter, RACI, RAID log, go/no-go, COE) lives in [docs/tpm/](docs/tpm/README.md), next to the code.
+>
+> **Portfolio project.** Northbridge Logistics, its three TPAs and all data are fictional and synthetic.
+
+## Progress
+
+| Level | What | Status |
+|---|---|---|
+| 0 | Business case, KPIs, planted data story, cost estimate ([docs/spec.md](docs/spec.md)) · [PR/FAQ](docs/tpm/prfaq.md) · [charter](docs/tpm/charter.md) · [RACI](docs/tpm/raci.md) · [RAID log](docs/tpm/raid-log.md) · first draft of the [data contract](docs/data-contract.yaml) | ✅ Done |
+| 1 | TPA feed simulator: 3 TPAs × 30 business days of claim files with manifests, planted defects and an answer key | ⏳ Next |
+| 2 | Contract-as-code checker: the validator reads `docs/data-contract.yaml` | ⬜ |
+| 3 | SLA clock: business days and time zones (06:00 CT) | ⬜ |
+| 4 | Event-driven validation on AWS: EventBridge, Lambda, DynamoDB arrival ledger, SNS | ⬜ |
+| 5 | Row-level data quality and quarantine (Glue Data Quality) | ⬜ |
+| 6 | Scorecard SQL, HTML scorecard, local Airflow DAG | ⬜ |
+| 7 | Deploy window, evidence, COE, teardown | ⬜ |
 
 ## 1. The business problem
-<One paragraph for any industry: what goes wrong today, what it costs, who decides, what decision this enables.>
 
-**Who uses it:** <role 1> · <role 2> · <role 3>
+Northbridge Logistics (fictional) runs about 3,500 leased delivery vans, self-insures its auto liability and hires three TPAs to handle the claims. Each TPA sends one file of claim transactions per business day. Today nobody checks those files when they arrive. A late file, a renamed column or a week of blank vehicle numbers is found weeks later, when finance asks why the month-end claims accrual moved.
+
+**Who uses it:**
+- **Claims-operations lead:** which TPA gets a remediation conversation this Monday.
+- **Controller:** can the month-end accrual use the TPA data as delivered?
+- **TPA account manager:** when to escalate.
+- **Each TPA's operations contact:** what to resend.
 
 ## 2. KPIs
-| KPI | Formula | Why it matters | Threshold / alert | Frequency |
-|---|---|---|---|---|
-| <KPI 1> | <a / b> | <impact> | <e.g. > 2% → SNS> | <real time / hourly / daily> |
-| <KPI 2> | | | | |
-| <KPI 3> | | | | |
 
-```mermaid
-mindmap
-  root((<North-star KPI>))
-    <Level 1: e.g. Plant>
-      <Level 2: e.g. Line>
-        <Level 3: e.g. Station>
-    <Level 1>
-      <Level 2>
-```
-Full definitions: [docs/kpi-dictionary.md](docs/kpi-dictionary.md)
-
-## 3. What the data shows
-<Real results from the deployed run. 3 findings, each with a number and the decision it drives.>
-
-1. **<Finding>:** <number> → <decision>
-2. **<Finding>:** <number> → <decision>
-3. **<Finding>:** <number> → <decision>
-
-![Result](docs/images/<result>.png)
-
-## 4. Architecture
-```mermaid
-flowchart LR
-    SRC[<Source>] --> ING[<Ingestion>] --> PROC[<Processing>] --> STORE[(<Storage>)] --> CONS[<Consumption>]
-```
-
-**Data flow:** how one record travels, step by step.
-```mermaid
-sequenceDiagram
-    participant S as <Source>
-    participant I as <Ingestion>
-    participant P as <Processing>
-    S->>I: <what is sent>
-    I->>P: <what happens>
-```
-
-## 5. Why each service
-| Service | Role here | Why this one (and not the alternative) |
+| KPI | Formula | Target / alert |
 |---|---|---|
-| <Service> | <role> | <reason, e.g. "Firehose instead of a custom consumer: no code, built-in Parquet conversion"> |
+| On-time delivery % | files by the deadline ÷ files expected (30 days) | ≥ 98%; missing at 06:00 CT → warning, 08:00 CT → critical |
+| Completeness % | 1 − rows with a required field blank ÷ rows | ≥ 99.5%; VIN blank ≤ 2% |
+| Contract pass rate % | files accepted ÷ files received | ≥ 97% |
+| Error rate per 1,000 rows | quarantined rows ÷ rows × 1,000 | ≤ 5 |
+| Quarantined paid value ($) | Σ paid_amount of quarantined rows | any day > $50,000 flagged |
 
-## 6. Alerts and schedule
-| Alert / job | Rule or schedule | Channel | Owner |
-|---|---|---|---|
-| <Low stock> | <stock_left < safety stock> | SNS email | <Purchasing> |
-| <Nightly ETL> | `cron(0 6 * * ? *)` | Glue trigger | — |
-
-## 7. Data layers
-| Layer | Location | Grain | Written by |
-|---|---|---|---|
-| Raw | `s3://…/raw/` | one row per event, as received | <Firehose / upload> |
-| Curated | `s3://…/curated/` | <grain> | <Glue job> |
-| Gold | `s3://…/gold/` | <KPI grain> | <job> |
-
-## 8. Engineering practices
-- **Idempotency / duplicates:** <how>
-- **Data quality:** <checks and what happens on failure>
-- **Security:** least-privilege IAM role per component, encryption at rest (SSE), TLS-only bucket policy
-- **Monitoring:** <CloudWatch alarms>
-- **CI/CD:** <what runs on every push>
-- **Cost:** see below
-- **Code standards:** modular, typed, commented at every step — see [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md)
-
-## 9. Run it
-Full setup, every configuration file and how to change it: [docs/configuration.md](docs/configuration.md).
-
-```bash
-make install && make test      # local, no AWS
-make deploy                    # creates the stack (see cost below)
-make demo                      # sends data / runs the jobs
-make destroy && make leftovers # tears everything down and checks nothing billable is left
-```
-**Estimated cost:** $<x.xx> for a <n>-hour run. **Actual cost:** $<x.xx> (Cost Explorer, tag `Project=<repo>`).
-
-## 10. Certification mapping
-| Exam | Domain | Where in this repo |
-|---|---|---|
-| AWS Data Engineer – Associate | <Ingestion and transformation / Store / Operations / Security and governance> | <file> |
-| AWS AI Practitioner | <domain, if any> | <file> |
-
-## 11. Lessons learned
-<Decisions that changed because of evidence while building: what we assumed, what the data showed, what we changed, the measured result. Full entries in [docs/lessons-learned.md](docs/lessons-learned.md).>
-
-- **<Lesson>:** <assumption> → <evidence with numbers> → <change> → <result with numbers>
-
-## 12. What I'd do next
-- <production improvement 1>
-- <production improvement 2>
-
-## Repository layout
-```
-docs/              spec, architecture, KPI dictionary, decisions, lessons learned, configuration, runbook, coding standards, images
-docs/tpm/          TPM artifacts (PR/FAQ, charter, RAID log, RACI, status report, go/no-go, COE); also docs/data-contract.yaml and docs/lineage.md
-infra/terraform/   one numbered file per pipeline stage (0_main.tf first)
-src/               common (config, logging, AWS clients), generators, lambdas, glue_jobs
-sql/               one query per KPI
-tests/             unit tests (no AWS needed)
-scripts/           leftovers and cost checks
-```
+Full definitions, hierarchy and the cost estimate (≈ $0.30): [docs/spec.md](docs/spec.md).
